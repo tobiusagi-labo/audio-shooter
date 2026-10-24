@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
-<title>Audio Invaders 7-Lane</title>
+<title>Audio Invaders (Relative Soundstage)</title>
 <style>
   * {
     box-sizing: border-box;
@@ -61,34 +61,34 @@
     background: #ffcc00;
   }
 
-  /* パン設定バー */
-  .pan-setting-bar {
+  /* 相対ステータス案内バー */
+  .radar-status-bar {
     display: flex;
+    justify-content: space-between;
     align-items: center;
-    gap: 8px;
+    background: #11141a;
+    padding: 5px 10px;
+    border-radius: 4px;
     font-size: 12px;
     color: #c5c6c7;
-    background: #11141a;
-    padding: 4px 8px;
-    border-radius: 4px;
   }
-  .pan-btn-group {
-    display: flex;
-    gap: 4px;
+  .lockon-indicator {
+    font-weight: bold;
+    padding: 2px 6px;
+    border-radius: 3px;
   }
-  .pan-btn {
+  .lockon-indicator.locked {
+    background: #ff0055;
+    color: #fff;
+    animation: blink 0.5s infinite alternate;
+  }
+  .lockon-indicator.searching {
     background: #2a3b4c;
     color: #66fcf1;
-    border: 1px solid #45a29e;
-    padding: 2px 8px;
-    border-radius: 3px;
-    font-size: 11px;
-    font-weight: bold;
-    cursor: pointer;
   }
-  .pan-btn.active {
-    background: #66fcf1;
-    color: #0b0c10;
+  @keyframes blink {
+    from { opacity: 0.7; }
+    to { opacity: 1.0; }
   }
 
   /* ゲームメイン画面（レーダー表示） */
@@ -121,20 +121,20 @@
     justify-content: center;
     align-items: center;
     text-align: center;
-    padding: 20px;
+    padding: 24px;
     pointer-events: none;
   }
   #blind-overlay.active {
     display: flex;
   }
   #blind-overlay h2 {
-    font-size: 22px;
-    margin-bottom: 10px;
+    font-size: 24px;
+    margin-bottom: 12px;
     color: #66fcf1;
   }
   #blind-overlay p {
-    font-size: 14px;
-    line-height: 1.6;
+    font-size: 15px;
+    line-height: 1.8;
     color: #c5c6c7;
   }
 
@@ -188,7 +188,7 @@
     background: #e6004c;
   }
 
-  /* オーバーレイ共通（スタート / ゲームオーバー / ウェーブクリア） */
+  /* モーダル */
   .modal-overlay {
     position: absolute;
     top: 0;
@@ -233,35 +233,36 @@
         <button id="toggle-visual-btn" class="hdr-btn">👁️ 目隠し</button>
       </div>
     </div>
-    <div class="pan-setting-bar">
-      <span>🎧 パンの広がり:</span>
-      <div class="pan-btn-group">
-        <button class="pan-btn" data-multiplier="1">標準(1x)</button>
-        <button class="pan-btn" data-multiplier="2">2倍</button>
-        <button class="pan-btn" data-multiplier="5">5倍</button>
-        <button class="pan-btn active" data-multiplier="10">超広域(10x)</button>
-      </div>
+    <div class="radar-status-bar">
+      <span>自機位置: レーン <span id="player-lane-txt">3 (中央)</span></span>
+      <span id="lockon-badge" class="lockon-indicator searching">探索中...</span>
     </div>
   </header>
 
   <div id="game-view">
     <canvas id="radarCanvas"></canvas>
 
-    <!-- 目隠し（ブラインド）プレイ画面 -->
+    <!-- 目隠しプレイ用オーバーレイ -->
     <div id="blind-overlay">
       <h2>🎧 ブラインドプレイ中</h2>
-      <p>画面を見ずに、イヤホンの音だけで<br>敵の位置を感じて撃破＆回避！</p>
-      <p style="margin-top: 15px; font-size: 12px; color: #888;">上部の「👁️ 目隠し」でレーダーを確認できます</p>
+      <p>
+        <b>音が聞こえる方向へ移動！</b><br>
+        音が<b>【正面（両耳の中央）】</b>に<br>
+        揃った瞬間が撃つチャンスです！<br><br>
+        敵が迫るほど音が大きくなります。<br>
+        敵弾の音が正面から迫ったらすぐ横へ回避！
+      </p>
     </div>
 
-    <!-- 初回スタート画面 -->
+    <!-- スタート画面 -->
     <div id="start-screen" class="modal-overlay">
       <h1 style="color:#66fcf1; margin-bottom: 12px;">AUDIO INVADERS</h1>
       <p style="line-height: 1.8; color:#c5c6c7; font-size: 15px;">
         ⚠️ <b>イヤホン・ヘッドホン必須</b><br>
-        全7列の音響で敵を探して撃つ！<br>
-        最初は1体からゆっくり始まります。<br>
-        敵弾の音が迫ったら別の列へ逃げてください。
+        <b>自機を中心とした「相対音場」システム</b><br><br>
+        ・左から音がしたら <b>左へ移動</b><br>
+        ・音が <b>【正面】</b> に合致したら <b>撃つ！</b><br>
+        ・敵が近づくほど音が大きく迫力UP！
       </p>
       <button id="start-btn" class="action-btn">🎧 タップしてスタート</button>
     </div>
@@ -275,7 +276,7 @@
     </div>
   </div>
 
-  <!-- 下部特大コントローラー（スマホ用） -->
+  <!-- 下部特大操作ボタン -->
   <div id="controls">
     <button id="btn-left" class="ctrl-btn btn-move">
       ◀ 左移動
@@ -283,7 +284,7 @@
     </button>
     <button id="btn-fire" class="ctrl-btn btn-shot">
       🔥 撃つ
-      <small>SHOT</small>
+      <small>SHOT (正面)</small>
     </button>
     <button id="btn-right" class="ctrl-btn btn-move">
       右移動 ▶
@@ -294,7 +295,6 @@
 <script>
 // --- 音響エンジン（Web Audio API） ---
 let audioCtx = null;
-let panMultiplier = 10; // デフォルト10倍パン
 
 function initAudio() {
   if (!audioCtx) {
@@ -305,16 +305,23 @@ function initAudio() {
   }
 }
 
-// 7列（0:最左 〜 3:中央 〜 6:最右）のステレオパン計算
-function getPan(lane) {
-  const norm = (lane - 3) / 3; // -1.0, -0.66, -0.33, 0.0, 0.33, 0.66, 1.0
-  // パン倍率を適用（10倍なら中央以外はほぼ完全に左右へ振り切る）
-  const scaled = norm * panMultiplier;
-  return Math.max(-1.0, Math.min(1.0, scaled));
+// ★ 相対音場パン計算 ★
+// 自機位置（playerLane）を「0.0（正面）」とし、
+// 敵が自分より左にいればマイナス（左）、右にいればプラス（右）へ聞こえる。
+// 自機を動かして敵と同じレーンに入ると diff === 0 となり、完全な正面（真ん中）で聞こえる！
+function getRelativePan(targetLane) {
+  const diff = targetLane - playerLane; // -6 〜 +6
+  if (diff === 0) return 0.0; // 完全な正面！
+
+  // 1列ズレるごとに大きく左右へ振る（1列差で約0.45、2列差で0.8、3列以上で1.0全振り）
+  const sign = Math.sign(diff);
+  const absDiff = Math.abs(diff);
+  const panVal = Math.min(1.0, 0.45 + (absDiff - 1) * 0.35);
+  return sign * panVal;
 }
 
-// 汎用サウンド再生ヘルパー
-function playTone({ freq, type = 'square', duration = 0.1, pan = 0, gain = 0.2, pitchDecay = 0, filterFreq = null }) {
+// 汎用サウンド再生
+function playTone({ freq, type = 'square', duration = 0.08, pan = 0, gain = 0.2, pitchDecay = 0, filterFreq = null }) {
   if (!audioCtx) return;
   const now = audioCtx.currentTime;
 
@@ -328,7 +335,7 @@ function playTone({ freq, type = 'square', duration = 0.1, pan = 0, gain = 0.2, 
     osc.frequency.exponentialRampToValueAtTime(Math.max(20, freq + pitchDecay), now + duration);
   }
 
-  panner.pan.setValueAtTime(pan, now);
+  panner.pan.setValueAtTime(Math.max(-1, Math.min(1, pan)), now);
 
   gainNode.gain.setValueAtTime(gain, now);
   gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration);
@@ -352,73 +359,88 @@ function playTone({ freq, type = 'square', duration = 0.1, pan = 0, gain = 0.2, 
 
 // 効果音集
 const SFX = {
-  // 自機移動音（自分の現在レーンから鳴る）
-  playerMove(lane) {
-    playTone({ freq: 650, type: 'triangle', duration: 0.06, pan: getPan(lane), gain: 0.25 });
+  // 自機移動音（左に動いたときは左寄り、右に動いたときは右寄りで短くシュッ）
+  playerMove(dir) {
+    const pan = dir < 0 ? -0.4 : 0.4;
+    playTone({ freq: 880, type: 'triangle', duration: 0.04, pan: pan, gain: 0.2 });
   },
-  // 端にぶつかった音（壁）
-  wallBump(lane) {
-    playTone({ freq: 150, type: 'sawtooth', duration: 0.1, pan: getPan(lane), gain: 0.3 });
+  // 壁限界音（端でそれ以上進めない）
+  wallBump(dir) {
+    const pan = dir < 0 ? -1.0 : 1.0;
+    playTone({ freq: 140, type: 'sawtooth', duration: 0.09, pan: pan, gain: 0.35 });
   },
-  // プレイヤーショット（自機レーンから上昇）
-  playerShot(lane) {
+  // プレイヤーショット（正面から前方へ突き抜ける発射音）
+  playerShot() {
     if (!audioCtx) return;
     const now = audioCtx.currentTime;
     const osc = audioCtx.createOscillator();
     const gainNode = audioCtx.createGain();
-    const panner = audioCtx.createStereoPanner();
 
     osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(260, now);
-    osc.frequency.exponentialRampToValueAtTime(1100, now + 0.15);
+    osc.frequency.setValueAtTime(320, now);
+    osc.frequency.exponentialRampToValueAtTime(1400, now + 0.12);
 
-    panner.pan.setValueAtTime(getPan(lane), now);
+    gainNode.gain.setValueAtTime(0.25, now);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
 
-    gainNode.gain.setValueAtTime(0.2, now);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
-
-    osc.connect(panner);
-    panner.connect(gainNode);
-    gainNode.connect(audioCtx.destination);
+    osc.connect(gainNode);
+    gainNode.connect(audioCtx.destination); // 正面（pan=0）
 
     osc.start(now);
-    osc.stop(now + 0.15);
+    osc.stop(now + 0.12);
   },
-  // 敵の足音/ビーコン
-  invaderStep(lane, distRate, noteIndex) {
-    const baseFreqs = [170, 150, 130, 110];
-    const freq = baseFreqs[noteIndex % baseFreqs.length];
+  // 敵の断続音（ソナー/ビーコン）
+  // 遠くでは小さく低く、近づくにつれて音量がグッと大きくクリアになる！
+  invaderPulse(lane, distRate, isLockedOn) {
+    const pan = getRelativePan(lane);
 
-    // 距離が近いほど音量UP & 高域フィルター開放
-    const gain = 0.08 + (distRate * 0.25);
-    const filterFreq = 280 + (distRate * 2600);
+    // 距離（distRate: 0.1=遠い 〜 1.0=至近）に応じた音量カーブ（2乗で遠くは小さく、近づくと大音量）
+    const gain = Math.max(0.03, Math.pow(distRate, 1.8) * 0.42);
 
-    playTone({
-      freq: freq + (distRate * 35),
-      type: 'square',
-      duration: 0.12,
-      pan: getPan(lane),
-      gain: gain,
-      filterFreq: filterFreq
-    });
+    // 遠いとこもり、近いとクリアな倍音
+    const filterFreq = 220 + (distRate * 2800);
+
+    // 正面（ロックオン状態）の時は高い音で「ピッ！」とピタリ合致した実感を与える
+    if (isLockedOn) {
+      // ロックオン時：高めで歯切れの良い二重ビーコン
+      playTone({
+        freq: 600 + (distRate * 120),
+        type: 'square',
+        duration: 0.07,
+        pan: 0,
+        gain: gain * 1.2,
+        filterFreq: filterFreq + 500
+      });
+    } else {
+      // 左右にいる時：低めの断続音「トッ…」
+      playTone({
+        freq: 220 + (distRate * 80),
+        type: 'triangle',
+        duration: 0.06,
+        pan: pan,
+        gain: gain,
+        filterFreq: filterFreq
+      });
+    }
   },
-  // 迫る敵弾の音
+  // 迫る敵弾の音（自機からの相対位置で聞こえる）
   bulletApproaching(lane, distRate) {
-    const gain = 0.06 + (distRate * 0.22);
+    const pan = getRelativePan(lane);
+    const gain = 0.05 + (distRate * 0.28);
     playTone({
-      freq: 420 + (distRate * 280),
-      pitchDecay: -160,
+      freq: 480 + (distRate * 300),
+      pitchDecay: -180,
       type: 'sine',
-      duration: 0.14,
-      pan: getPan(lane),
+      duration: 0.1,
+      pan: pan,
       gain: gain
     });
   },
-  // 敵撃破（爆発ノイズ）
+  // 敵撃破（正面または敵の相対位置で爆発）
   enemyExplode(lane) {
     if (!audioCtx) return;
     const now = audioCtx.currentTime;
-    const bufferSize = audioCtx.sampleRate * 0.3;
+    const bufferSize = audioCtx.sampleRate * 0.28;
     const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
     const data = buffer.getChannelData(0);
     for (let i = 0; i < bufferSize; i++) {
@@ -429,15 +451,15 @@ const SFX = {
 
     const filter = audioCtx.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(800, now);
-    filter.frequency.linearRampToValueAtTime(100, now + 0.3);
+    filter.frequency.setValueAtTime(900, now);
+    filter.frequency.linearRampToValueAtTime(100, now + 0.28);
 
     const panner = audioCtx.createStereoPanner();
-    panner.pan.setValueAtTime(getPan(lane), now);
+    panner.pan.setValueAtTime(getRelativePan(lane), now);
 
     const gainNode = audioCtx.createGain();
-    gainNode.gain.setValueAtTime(0.4, now);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+    gainNode.gain.setValueAtTime(0.45, now);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.28);
 
     noise.connect(filter);
     filter.connect(panner);
@@ -445,7 +467,7 @@ const SFX = {
     gainNode.connect(audioCtx.destination);
 
     noise.start(now);
-    noise.stop(now + 0.3);
+    noise.stop(now + 0.28);
   },
   // ウェーブクリアファンファーレ
   waveClear() {
@@ -457,11 +479,11 @@ const SFX = {
   },
   // プレイヤー被弾
   playerHit() {
-    playTone({ freq: 90, pitchDecay: -50, type: 'sawtooth', duration: 0.4, pan: 0, gain: 0.5 });
+    playTone({ freq: 85, pitchDecay: -45, type: 'sawtooth', duration: 0.4, pan: 0, gain: 0.5 });
   },
   // ゲームオーバー
   gameOver() {
-    playTone({ freq: 220, pitchDecay: -120, type: 'sawtooth', duration: 0.8, pan: 0, gain: 0.4 });
+    playTone({ freq: 200, pitchDecay: -110, type: 'sawtooth', duration: 0.8, pan: 0, gain: 0.45 });
   }
 };
 
@@ -469,7 +491,7 @@ const SFX = {
 const LANES = 7; // 0 〜 6
 const MAX_Y = 10; // 0（奥）〜 10（自機位置）
 
-let playerLane = 3;
+let playerLane = 3; // 初期位置: 中央3
 let score = 0;
 let hp = 3;
 let currentWave = 1;
@@ -478,59 +500,57 @@ let isGameOver = false;
 let enemies = [];
 let enemyStepIndex = 0;
 let lastStepTime = 0;
-let stepInterval = 1800; // 最初は非常にゆっくり（約1.8秒に1歩）
+let stepInterval = 1700; // ゆっくり（約1.7秒に1歩）
+
+// 敵の断続パルス音タイマー（歩進とは別に、定期的に断続音「ピッ…ピッ…」と発音）
+let lastPulseTime = 0;
+const PULSE_INTERVAL = 700; // 0.7秒おきに断続的に鳴る
 
 let playerBullets = [];
 let enemyBullets = [];
 
-// Wave初期化（最初は1体から少しずつ増加）
+// Wave初期化
 function startWave(waveNum) {
   currentWave = waveNum;
   enemies = [];
   playerBullets = [];
   enemyBullets = [];
 
-  // Waveに応じた敵の数（Wave 1: 1体, Wave 2: 2体, Wave 3: 3体... 最大7体）
   const enemyCount = Math.min(LANES, waveNum);
-
-  // レーンの選定（Wave 1は中央レーン3からスタート）
-  let availableLanes = [0, 1, 2, 3, 4, 5, 6];
   let spawnLanes = [];
 
   if (enemyCount === 1) {
-    spawnLanes = [3]; // 最初はど真ん中
+    // 最初の1体は、自機（3）から少し離れた列（例: 1列目か5列目）に配置
+    // これにより「左から音がする！→左へ2回移動→正面になった！→撃つ！」という体験が即座にできる！
+    spawnLanes = [1];
   } else if (enemyCount === 2) {
-    spawnLanes = [1, 5]; // 左右に1体ずつ
+    spawnLanes = [1, 5];
   } else if (enemyCount === 3) {
-    spawnLanes = [1, 3, 5];
+    spawnLanes = [0, 3, 6];
   } else {
-    // ランダムまたは均等配置
     spawnLanes = [0, 1, 2, 3, 4, 5, 6].slice(0, enemyCount);
   }
 
   for (let i = 0; i < enemyCount; i++) {
     enemies.push({
       lane: spawnLanes[i],
-      y: 1, // 最上段
+      y: 1, // 最上段（遠く）
       alive: true
     });
   }
 
-  // Waveが進むにつれて少しずつ速度を上げるが、初期は十分にゆっくり
-  // Wave 1: 1800ms, Wave 2: 1600ms, Wave 3: 1400ms...
-  stepInterval = Math.max(600, 1800 - (waveNum - 1) * 150);
+  stepInterval = Math.max(700, 1700 - (waveNum - 1) * 140);
   enemyDir = 1;
   enemyStepIndex = 0;
   updateUI();
 }
 
-// 敵の移動処理（ゆっくり横移動し、端に当たると一段接近）
+// 敵の移動処理（ゆっくり横移動し、端で一段接近）
 let enemyDir = 1;
 function stepEnemies() {
   const aliveEnemies = enemies.filter(e => e.alive);
   if (aliveEnemies.length === 0) return;
 
-  // 端への接触判定
   let hitWall = false;
   for (const e of aliveEnemies) {
     if ((enemyDir === 1 && e.lane >= LANES - 1) || (enemyDir === -1 && e.lane <= 0)) {
@@ -541,7 +561,6 @@ function stepEnemies() {
 
   if (hitWall) {
     enemyDir *= -1;
-    // 一段ゆっくり迫る
     for (const e of aliveEnemies) {
       e.y += 1;
       if (e.y >= MAX_Y) {
@@ -556,32 +575,27 @@ function stepEnemies() {
     }
   }
 
-  // 生存している敵から音を鳴らす
-  const soundEnemy = aliveEnemies[enemyStepIndex % aliveEnemies.length];
-  enemyStepIndex++;
-
-  const distRate = soundEnemy.y / MAX_Y;
-  SFX.invaderStep(soundEnemy.lane, distRate, enemyStepIndex);
-
-  // 敵の弾発射判定（Wave 1では撃たない、Wave 2以降で低頻度）
-  if (currentWave >= 2 && Math.random() < 0.25) {
+  // 敵の弾発射判定（Wave 2以降で低頻度）
+  if (currentWave >= 2 && Math.random() < 0.22) {
+    const shooter = aliveEnemies[Math.floor(Math.random() * aliveEnemies.length)];
     enemyBullets.push({
-      lane: soundEnemy.lane,
-      y: soundEnemy.y
+      lane: shooter.lane,
+      y: shooter.y
     });
   }
 }
 
-// 自機アクション
+// 自機操作
 function moveLeft() {
   if (isGameOver) return;
   initAudio();
   if (playerLane > 0) {
     playerLane--;
-    SFX.playerMove(playerLane);
+    SFX.playerMove(-1);
   } else {
-    SFX.wallBump(playerLane);
+    SFX.wallBump(-1);
   }
+  updateUI();
 }
 
 function moveRight() {
@@ -589,10 +603,11 @@ function moveRight() {
   initAudio();
   if (playerLane < LANES - 1) {
     playerLane++;
-    SFX.playerMove(playerLane);
+    SFX.playerMove(1);
   } else {
-    SFX.wallBump(playerLane);
+    SFX.wallBump(1);
   }
+  updateUI();
 }
 
 function fireShot() {
@@ -604,13 +619,14 @@ function fireShot() {
     lane: playerLane,
     y: MAX_Y
   });
-  SFX.playerShot(playerLane);
+  SFX.playerShot();
 }
 
-// リスタート処理
+// リスタート
 function restartGame() {
   score = 0;
   hp = 3;
+  playerLane = 3;
   isGameOver = false;
   document.getElementById('gameover-screen').style.display = 'none';
   startWave(1);
@@ -629,6 +645,20 @@ function updateUI() {
   document.getElementById('wave-val').textContent = currentWave;
   document.getElementById('hp-val').textContent = hp;
   document.getElementById('score-val').textContent = score;
+
+  const laneNames = ["0 (最左)", "1 (左中)", "2 (左微)", "3 (中央)", "4 (右微)", "5 (右中)", "6 (最右)"];
+  document.getElementById('player-lane-txt').textContent = laneNames[playerLane] || playerLane;
+
+  // 正面に敵がいるか（ロックオン判定）
+  const locked = enemies.some(e => e.alive && e.lane === playerLane);
+  const badge = document.getElementById('lockon-badge');
+  if (locked) {
+    badge.className = "lockon-indicator locked";
+    badge.textContent = "🎯 正面に捕捉！今すぐ撃て！";
+  } else {
+    badge.className = "lockon-indicator searching";
+    badge.textContent = "音の方向へ移動して捕捉";
+  }
 }
 
 // --- メインループ ---
@@ -646,16 +676,32 @@ function gameLoop(time) {
     return;
   }
 
-  // 敵の歩進
+  // 敵の移動歩進
   if (time - lastStepTime > stepInterval) {
     lastStepTime = time;
     stepEnemies();
   }
 
+  // ★ 敵の断続的な音（パルス）の定期再生 ★
+  if (time - lastPulseTime > PULSE_INTERVAL) {
+    lastPulseTime = time;
+    const aliveEnemies = enemies.filter(e => e.alive);
+    if (aliveEnemies.length > 0) {
+      // 1体ずつ順番に、あるいは最も近い敵の音を断続的に発音
+      const soundEnemy = aliveEnemies[enemyStepIndex % aliveEnemies.length];
+      enemyStepIndex++;
+
+      const distRate = soundEnemy.y / MAX_Y; // 0.1(遠い) 〜 1.0(目前)
+      const isLockedOn = (soundEnemy.lane === playerLane);
+
+      SFX.invaderPulse(soundEnemy.lane, distRate, isLockedOn);
+    }
+  }
+
   // プレイヤー弾移動
   for (let i = playerBullets.length - 1; i >= 0; i--) {
     const b = playerBullets[i];
-    b.y -= 0.22; // 上昇
+    b.y -= 0.24;
 
     let hit = false;
     for (const e of enemies) {
@@ -666,7 +712,6 @@ function gameLoop(time) {
         SFX.enemyExplode(e.lane);
         updateUI();
 
-        // Waveクリア判定
         const remaining = enemies.filter(enemy => enemy.alive).length;
         if (remaining === 0) {
           SFX.waveClear();
@@ -683,11 +728,11 @@ function gameLoop(time) {
     }
   }
 
-  // 敵弾移動（従来よりゆっくり避ける猶予を持たせる）
+  // 敵弾移動
   bulletWarningTimer += dt;
   for (let i = enemyBullets.length - 1; i >= 0; i--) {
     const eb = enemyBullets[i];
-    eb.y += 0.035; // ゆったり接近
+    eb.y += 0.035;
 
     // 直撃判定
     if (eb.y >= MAX_Y - 0.3 && eb.y <= MAX_Y + 0.3) {
@@ -708,8 +753,8 @@ function gameLoop(time) {
     }
   }
 
-  // 接近弾の警告音
-  if (enemyBullets.length > 0 && bulletWarningTimer > 280) {
+  // 迫る敵弾の音（正面から聞こえたら直撃コース＝回避必須！）
+  if (enemyBullets.length > 0 && bulletWarningTimer > 320) {
     bulletWarningTimer = 0;
     const closestBullet = [...enemyBullets].sort((a, b) => b.y - a.y)[0];
     if (closestBullet) {
@@ -743,27 +788,44 @@ function drawRadar() {
 
   // 7レーン描画
   for (let i = 0; i < LANES; i++) {
-    ctx.strokeStyle = (i === playerLane) ? 'rgba(102, 252, 241, 0.3)' : 'rgba(255, 255, 255, 0.06)';
-    ctx.lineWidth = 1;
+    const isPlayer = (i === playerLane);
+    ctx.strokeStyle = isPlayer ? 'rgba(102, 252, 241, 0.4)' : 'rgba(255, 255, 255, 0.06)';
+    ctx.lineWidth = isPlayer ? 2 : 1;
     ctx.strokeRect(i * laneW, 0, laneW, canvas.height);
 
-    ctx.fillStyle = (i === playerLane) ? '#66fcf1' : 'rgba(255, 255, 255, 0.25)';
-    ctx.font = '11px monospace';
+    // 相対表示（自機から見て何列離れているか）
+    const relDiff = i - playerLane;
+    let relText = "";
+    if (relDiff === 0) relText = "正面";
+    else if (relDiff < 0) relText = `左${Math.abs(relDiff)}`;
+    else relText = `右${relDiff}`;
+
+    ctx.fillStyle = isPlayer ? '#66fcf1' : 'rgba(255, 255, 255, 0.3)';
+    ctx.font = isPlayer ? 'bold 11px sans-serif' : '10px sans-serif';
     ctx.textAlign = 'center';
-    const panText = i < 3 ? `L${3-i}` : (i === 3 ? 'C' : `R${i-3}`);
-    ctx.fillText(panText, i * laneW + laneW / 2, 20);
+    ctx.fillText(relText, i * laneW + laneW / 2, 20);
   }
 
-  // 敵
+  // 敵の描画
   for (const e of enemies) {
     if (!e.alive) continue;
     const x = e.lane * laneW + laneW / 2;
     const y = e.y * unitH;
+    const isLocked = (e.lane === playerLane);
 
-    ctx.fillStyle = '#ff3366';
+    ctx.fillStyle = isLocked ? '#ff0055' : '#ff5577';
     ctx.beginPath();
-    ctx.arc(x, y, laneW * 0.35, 0, Math.PI * 2);
+    ctx.arc(x, y, isLocked ? laneW * 0.4 : laneW * 0.32, 0, Math.PI * 2);
     ctx.fill();
+
+    // ロックオン照準リング
+    if (isLocked) {
+      ctx.strokeStyle = '#ffff00';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x, y, laneW * 0.48, 0, Math.PI * 2);
+      ctx.stroke();
+    }
 
     ctx.fillStyle = '#fff';
     ctx.fillRect(x - 4, y - 2, 2, 3);
@@ -807,7 +869,7 @@ document.getElementById('start-btn').addEventListener('click', () => {
   startWave(1);
 });
 
-// リスタートボタン
+// リスタート
 document.getElementById('restart-header-btn').addEventListener('click', restartGame);
 document.getElementById('restart-modal-btn').addEventListener('click', restartGame);
 
@@ -815,22 +877,6 @@ document.getElementById('restart-modal-btn').addEventListener('click', restartGa
 const blindOverlay = document.getElementById('blind-overlay');
 document.getElementById('toggle-visual-btn').addEventListener('click', () => {
   blindOverlay.classList.toggle('active');
-});
-
-// パン倍率切り替えボタン（1x, 2x, 5x, 10x）
-const panBtns = document.querySelectorAll('.pan-btn');
-panBtns.forEach(btn => {
-  btn.addEventListener('click', (e) => {
-    panBtns.forEach(b => b.classList.remove('active'));
-    e.target.classList.add('active');
-    panMultiplier = parseFloat(e.target.dataset.multiplier);
-    // 切り替え確認音をテスト再生（左端と右端で鳴らす）
-    initAudio();
-    playTone({ freq: 800, type: 'triangle', duration: 0.1, pan: getPan(1), gain: 0.2 });
-    setTimeout(() => {
-      playTone({ freq: 800, type: 'triangle', duration: 0.1, pan: getPan(5), gain: 0.2 });
-    }, 120);
-  });
 });
 
 // スマホ操作ボタンバインド
