@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
-<title>Audio Invaders (Linear Stereo & Soft Plasma)</title>
+<title>Audio Invaders (Phase Quota & Heavy Bass)</title>
 <style>
   * {
     box-sizing: border-box;
@@ -40,7 +40,7 @@
   }
   .score-box {
     font-weight: bold;
-    font-size: 15px;
+    font-size: 14px;
     color: #66fcf1;
   }
   .header-btns {
@@ -71,6 +71,10 @@
     border-radius: 4px;
     font-size: 11px;
     color: #c5c6c7;
+  }
+  .quota-badge {
+    color: #ffcc00;
+    font-weight: bold;
   }
   .lockon-indicator {
     font-weight: bold;
@@ -226,14 +230,14 @@
 
   <header>
     <div class="header-top">
-      <div class="score-box">WAVE <span id="wave-val">1</span> | HP <span id="hp-val">3</span> | SCORE <span id="score-val">0</span></div>
+      <div class="score-box">PHASE <span id="phase-val">1</span> | <span class="quota-badge">ノルマ: 残り <span id="quota-val">3</span> 体</span> | HP <span id="hp-val">3</span></div>
       <div class="header-btns">
         <button id="restart-header-btn" class="hdr-btn restart">🔄 最初から</button>
         <button id="toggle-visual-btn" class="hdr-btn">👁️ 目隠し</button>
       </div>
     </div>
     <div class="radar-status-bar">
-      <span>自機: レーン <span id="player-lane-txt">3</span></span>
+      <span>自機: レーン <span id="player-lane-txt">3</span> | SCORE <span id="score-val">0</span></span>
       <span id="lockon-badge" class="lockon-indicator searching">音を正面に捉えて撃て</span>
     </div>
   </header>
@@ -245,9 +249,9 @@
     <div id="blind-overlay">
       <h2>🎧 ブラインドプレイ中</h2>
       <p>
-        <b>段階的な左右音場</b><br>
-        1列隣（少し横）〜遠い列（遥か外側）まで<br>
-        距離と角度が精密に聞き分けられます！
+        <b>倍加パン ＆ 重低音エナジー音響</b><br>
+        敵を倒してノルマを達成するとフェーズクリア！<br>
+        低い唸り音が迫ったら横へ逃げてください！
       </p>
     </div>
 
@@ -256,9 +260,9 @@
       <h1 style="color:#66fcf1; margin-bottom: 12px;">AUDIO INVADERS</h1>
       <p style="line-height: 1.8; color:#c5c6c7; font-size: 15px;">
         ⚠️ <b>イヤホン・ヘッドホン必須</b><br><br>
-        ・1列隣〜遠い列まで段階的に定位が変化します<br>
-        ・柔らかなプラズマ音が迫ったら横へ回避！<br>
-        ・避けると音が後ろへ抜けて飛び去ります
+        ・各フェーズの<b>【撃破ノルマ】</b>を達成してクリア！<br>
+        ・敵の音階は完全ランダムに発生します<br>
+        ・敵の攻撃は<b>重低音の連続音</b>。避ければ通過して消えます
       </p>
       <button id="start-btn" class="action-btn">🎧 タップしてスタート</button>
     </div>
@@ -266,7 +270,7 @@
     <!-- ゲームオーバー画面 -->
     <div id="gameover-screen" class="modal-overlay" style="display: none;">
       <h1 style="color:#ff0055; margin-bottom: 12px;">GAME OVER</h1>
-      <p style="font-size: 18px; color:#fff; margin-bottom: 8px;">最終WAVE: <span id="final-wave">1</span></p>
+      <p style="font-size: 18px; color:#fff; margin-bottom: 8px;">到達PHASE: <span id="final-wave">1</span></p>
       <p style="font-size: 16px; color:#c5c6c7;">スコア: <span id="final-score">0</span></p>
       <button id="restart-modal-btn" class="action-btn danger">🔄 もう一度遊ぶ</button>
     </div>
@@ -301,15 +305,14 @@ function initAudio() {
   }
 }
 
+// コード進行音階リスト（どの位置でもランダムに発生）
 const ENEMY_FREQS = [220, 277, 330, 415, 494, 554, 660];
 
 /**
- * ★ 段階的定位（1列〜6列差の精密な聞き分け）★
- * 1列隣でも5列離れていても同じに聞こえる問題を解決！
- * 列差ごとに段階的にパンと音量・遅延を滑らかに変化させ、
- * 「すぐ隣（小角度）」〜「真横」〜「遥か遠い端（外側）」を完璧に分離。
+ * ★ パンの値を従来の倍に設定 ★
+ * 1列離れただけでもガッツリ外側へ振り、明確に左右を強調！
  */
-function getLinearSpatialParams(targetLane) {
+function getDoublePanSpatialParams(targetLane) {
   const diff = targetLane - playerLane; // -6 〜 +6
   const absDiff = Math.abs(diff);
   const sign = Math.sign(diff); // -1: 左, 0: 正面, 1: 右
@@ -321,29 +324,26 @@ function getLinearSpatialParams(targetLane) {
       rightVol: 1.0,
       leftDelay: 0,
       rightDelay: 0,
-      distanceAttenuation: 1.0 // 正面は最もクリア
+      distanceAttenuation: 1.0
     };
   }
 
-  // 列差ごとの段階的ステレオパン設定
-  // 1列差: 0.28 (少し斜め)
-  // 2列差: 0.52 (斜め)
-  // 3列差: 0.72 (しっかり横)
-  // 4列差: 0.86 (深い横)
-  // 5列差: 0.95 (ほぼ真横外側)
-  // 6列差: 1.00 (完全な端)
-  const panSteps = [0, 0.28, 0.52, 0.72, 0.86, 0.95, 1.0];
+  // ★ パンの値をすべて従来の倍に設定 ★
+  // 1列差: 0.56（従来の0.28から倍増、斜め〜横寄り）
+  // 2列差: 0.95（ほぼ完全な横）
+  // 3列差以上: 1.00（完全な端・外側）
+  const panSteps = [0, 0.56, 0.95, 1.0, 1.0, 1.0, 1.0];
   const panVal = sign * (panSteps[absDiff] || 1.0);
 
-  // 反対耳の音量比率（1列ズレなら0.65残り、離れるほど徐々に減少）
-  const farEarSteps = [1.0, 0.65, 0.42, 0.22, 0.12, 0.06, 0.02];
-  const farRatio = farEarSteps[absDiff] || 0.02;
+  // 反対耳の音量（より急激にカットしてセパレーション倍増）
+  const farEarSteps = [1.0, 0.35, 0.12, 0.03, 0.01, 0.01, 0.01];
+  const farRatio = farEarSteps[absDiff] || 0.01;
 
-  // 両耳間時間差（ITD）: 離れるほどミリ秒遅延が増加
-  const delayTime = Math.min(0.0007, absDiff * 0.00012);
+  // ITDディレイ
+  const delayTime = Math.min(0.00075, absDiff * 0.00015);
 
-  // 横に離れるほど物理距離が遠くなるため音量を自然に減衰（5列離れている敵は小さく遠く感じる）
-  const distAttenuation = Math.max(0.45, 1.0 - (absDiff * 0.09));
+  // 横方向の距離減衰
+  const distAttenuation = Math.max(0.4, 1.0 - (absDiff * 0.11));
 
   if (sign < 0) {
     return {
@@ -367,18 +367,15 @@ function getLinearSpatialParams(targetLane) {
 }
 
 /**
- * 敵のアルペジオ・ステップ音（段階的定位出力）
+ * 敵のステップ発音（倍加パン出力）
  */
 function playSpatialTone({ freq, duration = 0.12, lane, distRate = 0.5, type = 'sine' }) {
   if (!audioCtx) return;
   const now = audioCtx.currentTime;
 
-  const spatial = getLinearSpatialParams(lane);
+  const spatial = getDoublePanSpatialParams(lane);
+  const baseGain = Math.max(0.04, Math.pow(distRate, 1.4) * 0.35) * spatial.distanceAttenuation;
 
-  // 前後の距離に応じた基本音量（奥は小さく、手前は大きく）
-  const baseGain = Math.max(0.03, Math.pow(distRate, 1.4) * 0.35) * spatial.distanceAttenuation;
-
-  // オシレーター（耳に優しいサイン波＋微細倍音）
   const osc1 = audioCtx.createOscillator();
   const osc2 = audioCtx.createOscillator();
   const osc2Gain = audioCtx.createGain();
@@ -403,7 +400,6 @@ function playSpatialTone({ freq, duration = 0.12, lane, distRate = 0.5, type = '
   osc2Gain.connect(filter);
   filter.connect(vca);
 
-  // 段階的バイノーラル出力
   const merger = audioCtx.createChannelMerger(2);
   const leftGain = audioCtx.createGain();
   const rightGain = audioCtx.createGain();
@@ -432,31 +428,28 @@ function playSpatialTone({ freq, duration = 0.12, lane, distRate = 0.5, type = '
 }
 
 /**
- * ★ 敵の攻撃弾：耳に優しい「ソフト・プラズマ音（連続音）」★
- * ノコギリ波の不快なブザー音を完全撤廃！
- * サイン波を基調とした、滑らかで心地よいSF風プラズマ音（フォオオオ…）
+ * ★ 敵の攻撃弾：重低音エナジー連続音（低く唸る音） ★
+ * 85Hz〜95Hz のサブベース音（不快感ゼロ、迫力ある重低音ドローン）
  */
 function createEnemyBulletSound(bullet) {
   if (!audioCtx) return null;
   const now = audioCtx.currentTime;
 
-  // 基音（柔らかなサイン波）
   const osc1 = audioCtx.createOscillator();
   osc1.type = 'sine';
-  osc1.frequency.setValueAtTime(260, now);
+  osc1.frequency.setValueAtTime(88, now); // 重低音88Hz
 
-  // わずかな浮遊感を出す第2サイン波（わずかにデチューンして厚みを付与）
   const osc2 = audioCtx.createOscillator();
-  osc2.type = 'sine';
-  osc2.frequency.setValueAtTime(264, now);
+  osc2.type = 'triangle';
+  osc2.frequency.setValueAtTime(92, now); // わずかに唸り（ビート）を加える
 
   const vca = audioCtx.createGain();
-  vca.gain.setValueAtTime(0.02, now);
+  vca.gain.setValueAtTime(0.03, now);
 
-  // 耳障りな高域をカットするソフトローパスフィルター
+  // マイルドな低域フィルター
   const filter = audioCtx.createBiquadFilter();
   filter.type = 'lowpass';
-  filter.frequency.setValueAtTime(450, now);
+  filter.frequency.setValueAtTime(280, now);
 
   const panner = audioCtx.createStereoPanner();
 
@@ -485,7 +478,6 @@ function createEnemyBulletSound(bullet) {
 
 // 効果音集
 const SFX = {
-  // 自機移動音
   playerMove(dir) {
     if (!audioCtx) return;
     const now = audioCtx.currentTime;
@@ -497,7 +489,7 @@ const SFX = {
     osc.frequency.setValueAtTime(500, now);
     osc.frequency.exponentialRampToValueAtTime(250, now + 0.02);
 
-    panner.pan.setValueAtTime(dir < 0 ? -0.3 : 0.3, now);
+    panner.pan.setValueAtTime(dir < 0 ? -0.4 : 0.4, now);
 
     g.gain.setValueAtTime(0.03, now);
     g.gain.exponentialRampToValueAtTime(0.001, now + 0.02);
@@ -510,7 +502,6 @@ const SFX = {
     osc.stop(now + 0.02);
   },
 
-  // 壁限界音
   wallBump(dir) {
     if (!audioCtx) return;
     const now = audioCtx.currentTime;
@@ -520,7 +511,7 @@ const SFX = {
 
     osc.type = 'triangle';
     osc.frequency.setValueAtTime(100, now);
-    panner.pan.setValueAtTime(dir < 0 ? -0.8 : 0.8, now);
+    panner.pan.setValueAtTime(dir < 0 ? -0.9 : 0.9, now);
 
     g.gain.setValueAtTime(0.06, now);
     g.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
@@ -533,7 +524,6 @@ const SFX = {
     osc.stop(now + 0.04);
   },
 
-  // 自機ショット音（シャープでキレのある高域レーザー）
   playerShot() {
     if (!audioCtx) return;
     const now = audioCtx.currentTime;
@@ -560,7 +550,6 @@ const SFX = {
     osc.stop(now + 0.05);
   },
 
-  // 敵撃破
   enemyExplode(lane) {
     if (!audioCtx) return;
     const now = audioCtx.currentTime;
@@ -575,11 +564,11 @@ const SFX = {
 
     const filter = audioCtx.createBiquadFilter();
     filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(600, now);
+    filter.frequency.setValueAtTime(550, now);
     filter.Q.setValueAtTime(1.5, now);
 
     const panner = audioCtx.createStereoPanner();
-    const spatial = getLinearSpatialParams(lane);
+    const spatial = getDoublePanSpatialParams(lane);
     panner.pan.setValueAtTime(spatial.pan, now);
 
     const g = audioCtx.createGain();
@@ -595,8 +584,8 @@ const SFX = {
     noise.stop(now + 0.2);
   },
 
-  // ウェーブクリア
-  waveClear() {
+  // フェーズクリア（ファンファーレ）
+  phaseClear() {
     [523, 659, 784, 1046].forEach((f, idx) => {
       setTimeout(() => {
         if (!audioCtx) return;
@@ -615,7 +604,6 @@ const SFX = {
     });
   },
 
-  // 被弾
   playerHit() {
     if (!audioCtx) return;
     const now = audioCtx.currentTime;
@@ -632,7 +620,6 @@ const SFX = {
     osc.stop(now + 0.3);
   },
 
-  // ゲームオーバー
   gameOver() {
     if (!audioCtx) return;
     const now = audioCtx.currentTime;
@@ -657,12 +644,13 @@ const MAX_Y = 10;
 let playerLane = 3;
 let score = 0;
 let hp = 3;
-let currentWave = 1;
+let currentPhase = 1;
+let quotaRemaining = 3; // 各フェーズの撃破ノルマ
 let isGameOver = false;
 
 let enemies = [];
 let lastStepTime = 0;
-let stepInterval = 2400; // 敵のゆったりした移動間隔
+let stepInterval = 2400; // フェーズごとに加速
 
 let lastBeatTime = 0;
 let currentEnemyBeatIndex = 0;
@@ -679,37 +667,49 @@ function clearAllBulletsAudio() {
   }
 }
 
-function startWave(waveNum) {
+// 敵を1体スポーン（ランダムな位置・ランダムな音階）
+function spawnEnemy() {
+  // すでに生きている敵のレーンと重ならないように選ぶ
+  const occupiedLanes = enemies.filter(e => e.alive).map(e => e.lane);
+  const freeLanes = [0, 1, 2, 3, 4, 5, 6].filter(l => !occupiedLanes.includes(l));
+  const chosenLane = freeLanes.length > 0
+    ? freeLanes[Math.floor(Math.random() * freeLanes.length)]
+    : Math.floor(Math.random() * LANES);
+
+  // ★ 音階は場所に関係なく、完全にランダム！ ★
+  const randomFreq = ENEMY_FREQS[Math.floor(Math.random() * ENEMY_FREQS.length)];
+
+  enemies.push({
+    lane: chosenLane,
+    y: 1,
+    alive: true,
+    freq: randomFreq
+  });
+}
+
+// フェーズ初期化（ノルマ設定・速度・射撃数調整）
+function startPhase(phaseNum) {
   clearAllBulletsAudio();
-  currentWave = waveNum;
+  currentPhase = phaseNum;
   enemies = [];
   playerBullets = [];
   enemyBullets = [];
   currentEnemyBeatIndex = 0;
 
-  const enemyCount = Math.min(LANES, waveNum);
-  let spawnLanes = [];
+  // ★ ノルマ設定: Phase 1は3体、Phase 2は5体、Phase 3は7体... ★
+  quotaRemaining = 3 + (phaseNum - 1) * 2;
 
-  if (enemyCount === 1) {
-    spawnLanes = [1];
-  } else if (enemyCount === 2) {
-    spawnLanes = [1, 5];
-  } else if (enemyCount === 3) {
-    spawnLanes = [0, 3, 6];
-  } else {
-    spawnLanes = [0, 1, 2, 3, 4, 5, 6].slice(0, enemyCount);
+  // 画面内の最大同時敵数（Phase 1: 1体, Phase 2: 2体, Phase 3: 2体, Phase 4+: 3体）
+  const maxOnScreen = Math.min(3, 1 + Math.floor((phaseNum - 1) / 1.5));
+
+  for (let i = 0; i < maxOnScreen; i++) {
+    spawnEnemy();
   }
 
-  for (let i = 0; i < enemyCount; i++) {
-    enemies.push({
-      lane: spawnLanes[i],
-      y: 1,
-      alive: true,
-      freq: ENEMY_FREQS[i % ENEMY_FREQS.length]
-    });
-  }
+  // ★ フェーズが進むと敵の進んでくる速度が上昇 ★
+  // Phase 1: 2400ms, Phase 2: 2050ms, Phase 3: 1750ms, Phase 4: 1500ms...
+  stepInterval = Math.max(900, 2400 - (phaseNum - 1) * 260);
 
-  stepInterval = Math.max(1300, 2400 - (waveNum - 1) * 180);
   enemyDir = 1;
   updateUI();
 }
@@ -743,8 +743,14 @@ function stepEnemies() {
     }
   }
 
-  // 敵の弾発射
-  if (currentWave >= 2 && Math.random() < 0.25) {
+  // ★ 射撃数はフェーズに応じて緩やかに上昇 ★
+  // Phase 1: 射撃なし(0%)
+  // Phase 2: 12%
+  // Phase 3: 18%
+  // Phase 4: 24%... (最大35%)
+  const shootChance = currentPhase === 1 ? 0 : Math.min(0.35, 0.08 + (currentPhase - 1) * 0.06);
+
+  if (Math.random() < shootChance) {
     const shooter = aliveEnemies[Math.floor(Math.random() * aliveEnemies.length)];
     const bulletObj = {
       lane: shooter.lane,
@@ -801,21 +807,22 @@ function restartGame() {
   playerLane = 3;
   isGameOver = false;
   document.getElementById('gameover-screen').style.display = 'none';
-  startWave(1);
+  startPhase(1);
 }
 
 function endGame() {
   isGameOver = true;
   clearAllBulletsAudio();
   SFX.gameOver();
-  document.getElementById('final-wave').textContent = currentWave;
+  document.getElementById('final-wave').textContent = currentPhase;
   document.getElementById('final-score').textContent = score;
   document.getElementById('gameover-screen').style.display = 'flex';
   updateUI();
 }
 
 function updateUI() {
-  document.getElementById('wave-val').textContent = currentWave;
+  document.getElementById('phase-val').textContent = currentPhase;
+  document.getElementById('quota-val').textContent = quotaRemaining;
   document.getElementById('hp-val').textContent = hp;
   document.getElementById('score-val').textContent = score;
 
@@ -884,16 +891,31 @@ function gameLoop(time) {
       if (e.alive && e.lane === b.lane && Math.abs(e.y - b.y) < 0.7) {
         e.alive = false;
         hit = true;
-        score += 100 * currentWave;
+        score += 100 * currentPhase;
+        quotaRemaining--;
         SFX.enemyExplode(e.lane);
         updateUI();
 
-        const remaining = enemies.filter(enemy => enemy.alive).length;
-        if (remaining === 0) {
-          SFX.waveClear();
+        // ★ ノルマ達成判定 ★
+        if (quotaRemaining <= 0) {
+          // フェーズクリア！
+          SFX.phaseClear();
+          clearAllBulletsAudio();
           setTimeout(() => {
-            startWave(currentWave + 1);
-          }, 900);
+            startPhase(currentPhase + 1);
+          }, 1100);
+          break;
+        } else {
+          // ノルマ未達：画面内の敵数が不足していれば、少し遅れて新敵を補充
+          const maxOnScreen = Math.min(3, 1 + Math.floor((currentPhase - 1) / 1.5));
+          const currentAlive = enemies.filter(enemy => enemy.alive).length;
+          if (currentAlive < maxOnScreen) {
+            setTimeout(() => {
+              if (!isGameOver && quotaRemaining > 0) {
+                spawnEnemy();
+              }
+            }, 800);
+          }
         }
         break;
       }
@@ -904,36 +926,30 @@ function gameLoop(time) {
     }
   }
 
-  // ★ 敵弾移動 ＆ 柔らかな連続プラズマ音・回避後方通過 ★
+  // ★ 敵弾移動 ＆ 重低音連続音・回避後方フェード ★
   const now = audioCtx.currentTime;
   for (let i = enemyBullets.length - 1; i >= 0; i--) {
     const eb = enemyBullets[i];
     eb.y += eb.speed;
 
-    const spatial = getLinearSpatialParams(eb.lane);
+    const spatial = getDoublePanSpatialParams(eb.lane);
     const distRate = eb.y / MAX_Y;
 
     if (eb.soundNodes) {
       const nodes = eb.soundNodes;
 
       if (!eb.passed) {
-        // 自機の手前に迫る段階：段階的ステレオパンで迫る（フォオオオ…）
+        // 自機の手前に迫る段階：倍加パンで迫る（重低音ドローン）
         nodes.panner.pan.setTargetAtTime(spatial.pan, now, 0.02);
 
-        // 距離に応じた音量＆フィルター（耳障りでない丸い音）
-        const vol = 0.03 + (distRate * 0.22);
+        // 距離に応じた音量（奥は小さく、近づくと重低音が増大）
+        const vol = 0.03 + (distRate * 0.24);
         nodes.vca.gain.setTargetAtTime(vol, now, 0.02);
-        nodes.filter.frequency.setTargetAtTime(320 + (distRate * 450), now, 0.02);
-        nodes.osc1.frequency.setTargetAtTime(240 + (distRate * 70), now, 0.02);
-        nodes.osc2.frequency.setTargetAtTime(244 + (distRate * 70), now, 0.02);
       } else {
-        // 回避成功：背後へ抜けるドップラー減衰（スウウウーーーン…↓）
+        // ★ 回避成功：ドップラーは無くし、背後へスーッと音量をフェードアウト ★
         if (!nodes.isPassingBack) {
           nodes.isPassingBack = true;
-          nodes.osc1.frequency.exponentialRampToValueAtTime(70, now + 0.6);
-          nodes.osc2.frequency.exponentialRampToValueAtTime(72, now + 0.6);
-          nodes.filter.frequency.exponentialRampToValueAtTime(140, now + 0.6);
-          nodes.vca.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+          nodes.vca.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
         }
       }
     }
@@ -951,12 +967,12 @@ function gameLoop(time) {
         }
         continue;
       } else {
-        eb.passed = true; // 回避成功！
+        eb.passed = true; // 回避成功
       }
     }
 
-    // 後方完全通過
-    if (eb.y > MAX_Y + 2.5) {
+    // 背後へ抜け切った時点で消滅
+    if (eb.y > MAX_Y + 1.8) {
       if (eb.soundNodes) eb.soundNodes.cleanup();
       enemyBullets.splice(i, 1);
     }
@@ -1058,7 +1074,7 @@ function drawRadar() {
 document.getElementById('start-btn').addEventListener('click', () => {
   initAudio();
   document.getElementById('start-screen').style.display = 'none';
-  startWave(1);
+  startPhase(1);
 });
 
 document.getElementById('restart-header-btn').addEventListener('click', restartGame);
