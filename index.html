@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
-<title>Audio Invaders (Wide Soundstage)</title>
+<title>Audio Invaders (Active Radar)</title>
 <style>
   * {
     box-sizing: border-box;
@@ -61,7 +61,7 @@
     background: #ffcc00;
   }
 
-  /* 相対ステータス案内バー */
+  /* ステータスバー */
   .radar-status-bar {
     display: flex;
     justify-content: space-between;
@@ -138,7 +138,7 @@
     color: #c5c6c7;
   }
 
-  /* スマホ操作ボタンエリア */
+  /* 操作ボタンエリア */
   #controls {
     display: flex;
     height: 120px;
@@ -246,9 +246,9 @@
     <div id="blind-overlay">
       <h2>🎧 ブラインドプレイ中</h2>
       <p>
-        <b>広大な立体音場（バイノーラル）</b><br>
-        遠い外側から響く敵の音を探し、<br>
-        音が<b>【正面（真ん中）】</b>に収束したら撃つ！<br><br>
+        <b>常時発音ソナー搭載</b><br>
+        敵がそれぞれ固有の音階を鳴らし続けています。<br>
+        音が<b>【正面（真ん中）】</b>に合った瞬間に撃て！<br><br>
         正面から迫る敵弾の音が聞こえたらすぐ回避！
       </p>
     </div>
@@ -258,10 +258,10 @@
       <h1 style="color:#66fcf1; margin-bottom: 12px;">AUDIO INVADERS</h1>
       <p style="line-height: 1.8; color:#c5c6c7; font-size: 15px;">
         ⚠️ <b>イヤホン・ヘッドホン必須</b><br>
-        <b>ワイド音場（バイノーラル立体音響）仕様</b><br><br>
-        ・外側から音が聞こえたらその方向へ移動<br>
-        ・<b>【正面】</b>に合致した瞬間に <b>撃つ！</b><br>
-        ・敵が近づくにつれて大音量＆臨場感UP
+        <b>常時音を放つ敵を捉えるソナーシューティング</b><br><br>
+        ・敵はそれぞれ異なる高さの音を鳴らし続けます<br>
+        ・音が <b>【正面（真ん中）】</b> に来たら <b>撃つ！</b><br>
+        ・敵が迫るほど音が大きくシャープになります
       </p>
       <button id="start-btn" class="action-btn">🎧 タップしてスタート</button>
     </div>
@@ -292,245 +292,227 @@
   </div>
 
 <script>
-// --- 音響エンジン（Web Audio API / ワイド・バイノーラル音響） ---
+// --- 音響エンジン（Web Audio API） ---
 let audioCtx = null;
-let reverbConvolver = null;
 
 function initAudio() {
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    buildSpaceReverb();
   }
   if (audioCtx.state === 'suspended') {
     audioCtx.resume();
   }
 }
 
-// 空間の臨場感を出すための微小な空間リバーブ（アンビエンス）を合成
-function buildSpaceReverb() {
-  const sampleRate = audioCtx.sampleRate;
-  const length = sampleRate * 0.8; // 0.8秒の残響
-  const impulse = audioCtx.createBuffer(2, length, sampleRate);
-  const left = impulse.getChannelData(0);
-  const right = impulse.getChannelData(1);
-
-  for (let i = 0; i < length; i++) {
-    const decay = Math.exp(-i / (sampleRate * 0.15)); // 急速に減衰する初期反射
-    left[i] = (Math.random() * 2 - 1) * decay * 0.25;
-    right[i] = (Math.random() * 2 - 1) * decay * 0.25;
-  }
-
-  reverbConvolver = audioCtx.createConvolver();
-  reverbConvolver.buffer = impulse;
-
-  // リバーブ専用の微小Gain（空間の空気感として薄く混ぜる）
-  const reverbGain = audioCtx.createGain();
-  reverbGain.gain.setValueAtTime(0.18, audioCtx.currentTime);
-  reverbConvolver.connect(reverbGain);
-  reverbGain.connect(audioCtx.destination);
-}
+/**
+ * 敵ごとに区別しやすい音階周波数リスト（ペンタトニックスケール風）
+ * 複数同時に鳴っても濁らず、耳の中で「あそこに高い敵、ここに低い敵」と明確に分離して聴き取れる
+ */
+const ENEMY_FREQS = [220, 277, 330, 415, 494, 554, 660]; // A3, C#4, E4, G#4, B4, C#5, E5
 
 /**
- * ★ ワイド・バイノーラル音場ルーティング ★
- * 人間が「広大な外側から聞こえる」と感じる両耳間時間差（ITD: 0〜0.7ms）と
- * 頭部シャドウ（ILD + 逆耳ローパス）を再現。
+ * 各敵の常時発音シンセサイザーノードを生成
+ * リバーブなしのドライな超ワイドバイノーラル音響
  */
-function connectBinaural(sourceNode, targetLane, masterGain = 0.2) {
-  const diff = targetLane - playerLane; // 自機からの相対列差 (-6 〜 +6)
+function createEnemySoundNodes(enemy, index) {
+  if (!audioCtx) return null;
   const now = audioCtx.currentTime;
 
-  // チャンネルマージャー（ステレオ2ch出力）
-  const merger = audioCtx.createChannelMerger(2);
+  // メインオシレーター（三角波/矩形波ブレンドで輪郭のはっきりした音）
+  const osc = audioCtx.createOscillator();
+  osc.type = index % 2 === 0 ? 'triangle' : 'sawtooth';
+  const baseFreq = ENEMY_FREQS[index % ENEMY_FREQS.length];
+  osc.frequency.setValueAtTime(baseFreq, now);
 
-  // 左耳用・右耳用のゲインとディレイ
+  // トレモロ（パルス感）を与えるためのLFO
+  const lfo = audioCtx.createOscillator();
+  const lfoGain = audioCtx.createGain();
+  lfo.frequency.setValueAtTime(4.5 + (index * 0.8), now); // 敵ごとに少し異なるパルス周期
+  lfoGain.gain.setValueAtTime(0.35, now);
+
+  const vca = audioCtx.createGain();
+  vca.gain.setValueAtTime(0.5, now);
+  lfo.connect(lfoGain);
+  lfoGain.connect(vca.gain);
+
+  // フィルター（距離によって開閉）
+  const filter = audioCtx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(300, now);
+
+  // バイノーラル定位用ノード群
+  const merger = audioCtx.createChannelMerger(2);
   const leftGain = audioCtx.createGain();
   const rightGain = audioCtx.createGain();
   const leftDelay = audioCtx.createDelay(0.01);
   const rightDelay = audioCtx.createDelay(0.01);
 
-  if (diff === 0) {
-    // 【正面・ロックオン状態】
-    // 両耳均等、ディレイなし（位相同期）でセンターにピタッと定位！
-    leftGain.gain.setValueAtTime(masterGain, now);
-    rightGain.gain.setValueAtTime(masterGain, now);
-    leftDelay.delayTime.setValueAtTime(0, now);
-    rightDelay.delayTime.setValueAtTime(0, now);
+  // 反対耳の頭部シャドウフィルター
+  const shadowFilterL = audioCtx.createBiquadFilter();
+  shadowFilterL.type = 'lowpass';
+  shadowFilterL.frequency.setValueAtTime(650, now);
 
-    sourceNode.connect(leftGain);
-    sourceNode.connect(rightGain);
-    leftGain.connect(merger, 0, 0); // ch0: L
-    rightGain.connect(merger, 0, 1); // ch1: R
+  const shadowFilterR = audioCtx.createBiquadFilter();
+  shadowFilterR.type = 'lowpass';
+  shadowFilterR.frequency.setValueAtTime(650, now);
+
+  // 接続
+  osc.connect(filter);
+  filter.connect(vca);
+
+  // Lルート
+  vca.connect(leftGain);
+  leftGain.connect(merger, 0, 0);
+
+  // Rルート
+  vca.connect(rightGain);
+  rightGain.connect(merger, 0, 1);
+
+  merger.connect(audioCtx.destination);
+
+  osc.start(now);
+  lfo.start(now);
+
+  return {
+    osc, lfo, vca, filter,
+    leftGain, rightGain, leftDelay, rightDelay,
+    merger,
+    baseFreq,
+    cleanup() {
+      try {
+        const stopTime = audioCtx.currentTime + 0.05;
+        vca.gain.setTargetAtTime(0, audioCtx.currentTime, 0.01);
+        osc.stop(stopTime);
+        lfo.stop(stopTime);
+      } catch (err) {}
+    }
+  };
+}
+
+/**
+ * 自機の位置と敵の位置・距離に応じて、敵の音をリアルタイム更新
+ */
+function updateEnemySpatialAudio(enemy) {
+  if (!enemy.soundNodes || !audioCtx) return;
+  const now = audioCtx.currentTime;
+  const nodes = enemy.soundNodes;
+
+  const diff = enemy.lane - playerLane; // 自機からの相対列差
+  const distRate = enemy.y / MAX_Y; // 0.1(遠い) 〜 1.0(目前)
+
+  // 距離に応じた音量（奥は小さく、手前はしっかり大きく）
+  const masterVolume = Math.max(0.02, Math.pow(distRate, 1.6) * 0.28);
+
+  // 距離に応じたフィルター周波数
+  const filterCutoff = 250 + (distRate * 3500);
+  nodes.filter.frequency.setTargetAtTime(filterCutoff, now, 0.03);
+
+  if (diff === 0) {
+    // 【正面・ロックオン】
+    // 両耳均等、完全なセンター定位！高音がさらにクリアに抜ける
+    nodes.leftGain.gain.setTargetAtTime(masterVolume * 1.25, now, 0.03);
+    nodes.rightGain.gain.setTargetAtTime(masterVolume * 1.25, now, 0.03);
+    nodes.osc.frequency.setTargetAtTime(nodes.baseFreq * 1.15, now, 0.03); // 正面で少し音が高くなって合致を強調
   } else {
-    // 【左右にズレている状態】
-    // 1列でもズレたらガッツリ外側（真横）へ広げる！
+    // 【左右にいる状態】
+    nodes.osc.frequency.setTargetAtTime(nodes.baseFreq, now, 0.03);
+
     const sign = Math.sign(diff); // -1: 左, +1: 右
     const absDiff = Math.abs(diff);
 
-    // 時間差（ITD: 最大0.75ms）。反対側の耳に遅れて届くことで頭外の広大な空間を感じる
-    const delayTime = Math.min(0.00075, 0.0003 + (absDiff * 0.0001));
-
-    // 反対側の耳の音量を極限までカット（0.05〜0.02）し、超ワイドなセパレーションを実現
-    const farEarGainVal = Math.max(0.01, 0.08 - (absDiff * 0.015));
-
-    // 反対側の耳には頭の遮蔽で高音をカットするローパスフィルター
-    const shadowFilter = audioCtx.createBiquadFilter();
-    shadowFilter.type = 'lowpass';
-    shadowFilter.frequency.setValueAtTime(700, now);
+    // 1列ズレただけでもガッツリ外側へ広げる超ワイドセパレーション
+    const farEarVol = Math.max(0.005, 0.06 - (absDiff * 0.015));
 
     if (sign < 0) {
       // 敵は左側
-      leftGain.gain.setValueAtTime(masterGain, now);
-      leftDelay.delayTime.setValueAtTime(0, now);
-
-      rightGain.gain.setValueAtTime(masterGain * farEarGainVal, now);
-      rightDelay.delayTime.setValueAtTime(delayTime, now);
-
-      sourceNode.connect(leftGain);
-      leftGain.connect(merger, 0, 0); // L
-
-      sourceNode.connect(shadowFilter);
-      shadowFilter.connect(rightDelay);
-      rightDelay.connect(rightGain);
-      rightGain.connect(merger, 0, 1); // R
+      nodes.leftGain.gain.setTargetAtTime(masterVolume, now, 0.03);
+      nodes.rightGain.gain.setTargetAtTime(masterVolume * farEarVol, now, 0.03);
     } else {
       // 敵は右側
-      rightGain.gain.setValueAtTime(masterGain, now);
-      rightDelay.delayTime.setValueAtTime(0, now);
-
-      leftGain.gain.setValueAtTime(masterGain * farEarGainVal, now);
-      leftDelay.delayTime.setValueAtTime(delayTime, now);
-
-      sourceNode.connect(rightGain);
-      rightGain.connect(merger, 0, 1); // R
-
-      sourceNode.connect(shadowFilter);
-      shadowFilter.connect(leftDelay);
-      leftDelay.connect(leftGain);
-      leftGain.connect(merger, 0, 0); // L
+      nodes.rightGain.gain.setTargetAtTime(masterVolume, now, 0.03);
+      nodes.leftGain.gain.setTargetAtTime(masterVolume * farEarVol, now, 0.03);
     }
-  }
-
-  // メイン出力と、臨場感アンビエンス（リバーブ）へ接続
-  merger.connect(audioCtx.destination);
-  if (reverbConvolver) {
-    merger.connect(reverbConvolver);
   }
 }
 
 // 効果音集
 const SFX = {
-  // 自機移動音：大幅に音量を抑え、耳障りでない極小ソフトクリック（gain: 0.035）
+  // 自機移動音：微細なソフトクリック（耳障りでない超控えめ音量）
   playerMove(dir) {
     if (!audioCtx) return;
     const now = audioCtx.currentTime;
     const osc = audioCtx.createOscillator();
-    const gainNode = audioCtx.createGain();
+    const g = audioCtx.createGain();
     const panner = audioCtx.createStereoPanner();
 
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(600, now);
-    osc.frequency.exponentialRampToValueAtTime(300, now + 0.025);
+    osc.frequency.setValueAtTime(500, now);
+    osc.frequency.exponentialRampToValueAtTime(250, now + 0.02);
 
     panner.pan.setValueAtTime(dir < 0 ? -0.3 : 0.3, now);
 
-    // ★ ごく控えめな音量
-    gainNode.gain.setValueAtTime(0.035, now);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.025);
+    g.gain.setValueAtTime(0.03, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.02);
 
-    osc.connect(gainNode);
-    gainNode.connect(panner);
+    osc.connect(g);
+    g.connect(panner);
     panner.connect(audioCtx.destination);
 
     osc.start(now);
-    osc.stop(now + 0.025);
+    osc.stop(now + 0.02);
   },
 
-  // 端にぶつかった音（控えめな低音タップ）
+  // 壁限界音
   wallBump(dir) {
     if (!audioCtx) return;
     const now = audioCtx.currentTime;
     const osc = audioCtx.createOscillator();
-    const gainNode = audioCtx.createGain();
+    const g = audioCtx.createGain();
     const panner = audioCtx.createStereoPanner();
 
     osc.type = 'triangle';
-    osc.frequency.setValueAtTime(110, now);
-    panner.pan.setValueAtTime(dir < 0 ? -0.9 : 0.9, now);
+    osc.frequency.setValueAtTime(100, now);
+    panner.pan.setValueAtTime(dir < 0 ? -0.8 : 0.8, now);
 
-    gainNode.gain.setValueAtTime(0.08, now);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+    g.gain.setValueAtTime(0.06, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
 
-    osc.connect(gainNode);
-    gainNode.connect(panner);
+    osc.connect(g);
+    g.connect(panner);
     panner.connect(audioCtx.destination);
 
     osc.start(now);
-    osc.stop(now + 0.05);
+    osc.stop(now + 0.04);
   },
 
-  // プレイヤーショット（正面から前方へ突き抜ける爽快音）
+  // ★ 自機ショット音：強すぎる低音を削り、シャープで鋭い短時間レーザー（ピシュッ！）
   playerShot() {
     if (!audioCtx) return;
     const now = audioCtx.currentTime;
+
     const osc = audioCtx.createOscillator();
-    const gainNode = audioCtx.createGain();
+    const g = audioCtx.createGain();
+    const highpass = audioCtx.createBiquadFilter();
 
     osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(340, now);
-    osc.frequency.exponentialRampToValueAtTime(1500, now + 0.12);
+    // 高域寄りの鋭いピッチ下降（2200Hz -> 600Hz）
+    osc.frequency.setValueAtTime(2200, now);
+    osc.frequency.exponentialRampToValueAtTime(600, now + 0.05);
 
-    gainNode.gain.setValueAtTime(0.22, now);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+    // 不要な低音をカットしてシャープにするハイパスフィルター
+    highpass.type = 'highpass';
+    highpass.frequency.setValueAtTime(700, now);
 
-    osc.connect(gainNode);
-    gainNode.connect(audioCtx.destination);
+    // 音量は控えめでキレよく
+    g.gain.setValueAtTime(0.12, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+
+    osc.connect(highpass);
+    highpass.connect(g);
+    g.connect(audioCtx.destination);
 
     osc.start(now);
-    osc.stop(now + 0.12);
-  },
-
-  // 敵の断続パルス（超ワイドバイノーラル音場 & 距離音量）
-  invaderPulse(lane, distRate, isLockedOn) {
-    if (!audioCtx) return;
-    const now = audioCtx.currentTime;
-    const osc = audioCtx.createOscillator();
-    const gainNode = audioCtx.createGain();
-    const filter = audioCtx.createBiquadFilter();
-
-    // 距離（遠い=0.1 〜 目前=1.0）に応じた音量カーブ（遠くは控えめ、近づくとド迫力！）
-    const masterGain = Math.max(0.03, Math.pow(distRate, 1.7) * 0.45);
-    const filterFreq = 260 + (distRate * 3200);
-
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(filterFreq, now);
-
-    if (isLockedOn) {
-      // 正面ロックオン時：高めでクリアな合致音「ピピッ！」
-      osc.type = 'square';
-      osc.frequency.setValueAtTime(640 + (distRate * 100), now);
-      gainNode.gain.setValueAtTime(masterGain * 1.1, now);
-      gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
-
-      osc.connect(filter);
-      filter.connect(gainNode);
-      connectBinaural(gainNode, lane, masterGain);
-
-      osc.start(now);
-      osc.stop(now + 0.08);
-    } else {
-      // 左右にいる時：外側から響く重厚なパルス音「ドンッ…」
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(180 + (distRate * 60), now);
-      gainNode.gain.setValueAtTime(masterGain, now);
-      gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
-
-      osc.connect(filter);
-      filter.connect(gainNode);
-      connectBinaural(gainNode, lane, masterGain);
-
-      osc.start(now);
-      osc.stop(now + 0.09);
-    }
+    osc.stop(now + 0.05);
   },
 
   // 迫る敵弾の音
@@ -538,29 +520,35 @@ const SFX = {
     if (!audioCtx) return;
     const now = audioCtx.currentTime;
     const osc = audioCtx.createOscillator();
-    const gainNode = audioCtx.createGain();
+    const g = audioCtx.createGain();
+    const panner = audioCtx.createStereoPanner();
+
+    const diff = lane - playerLane;
+    const pan = diff === 0 ? 0 : Math.sign(diff) * Math.min(1.0, 0.5 + Math.abs(diff) * 0.3);
+    panner.pan.setValueAtTime(pan, now);
 
     osc.type = 'sine';
-    const startFreq = 480 + (distRate * 280);
+    const startFreq = 500 + (distRate * 250);
     osc.frequency.setValueAtTime(startFreq, now);
-    osc.frequency.exponentialRampToValueAtTime(Math.max(40, startFreq - 200), now + 0.1);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(50, startFreq - 220), now + 0.08);
 
-    const gain = 0.04 + (distRate * 0.28);
-    gainNode.gain.setValueAtTime(gain, now);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+    const gain = 0.04 + (distRate * 0.22);
+    g.gain.setValueAtTime(gain, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
 
-    osc.connect(gainNode);
-    connectBinaural(gainNode, lane, gain);
+    osc.connect(panner);
+    panner.connect(g);
+    g.connect(audioCtx.destination);
 
     osc.start(now);
-    osc.stop(now + 0.1);
+    osc.stop(now + 0.08);
   },
 
-  // 敵撃破（バイノーラル爆発音）
+  // 敵撃破（ドライでキレのある爆発音）
   enemyExplode(lane) {
     if (!audioCtx) return;
     const now = audioCtx.currentTime;
-    const bufferSize = audioCtx.sampleRate * 0.32;
+    const bufferSize = audioCtx.sampleRate * 0.2;
     const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
     const data = buffer.getChannelData(0);
     for (let i = 0; i < bufferSize; i++) {
@@ -570,20 +558,26 @@ const SFX = {
     noise.buffer = buffer;
 
     const filter = audioCtx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(1000, now);
-    filter.frequency.linearRampToValueAtTime(80, now + 0.32);
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(600, now);
+    filter.Q.setValueAtTime(1.5, now);
 
-    const gainNode = audioCtx.createGain();
-    gainNode.gain.setValueAtTime(0.45, now);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.32);
+    const panner = audioCtx.createStereoPanner();
+    const diff = lane - playerLane;
+    const pan = diff === 0 ? 0 : Math.sign(diff) * Math.min(1.0, 0.5 + Math.abs(diff) * 0.3);
+    panner.pan.setValueAtTime(pan, now);
+
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0.35, now);
+    g.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
 
     noise.connect(filter);
-    filter.connect(gainNode);
-    connectBinaural(gainNode, lane, 0.45);
+    filter.connect(panner);
+    panner.connect(g);
+    g.connect(audioCtx.destination);
 
     noise.start(now);
-    noise.stop(now + 0.32);
+    noise.stop(now + 0.2);
   },
 
   // ウェーブクリア
@@ -596,13 +590,13 @@ const SFX = {
         const g = audioCtx.createGain();
         osc.type = 'triangle';
         osc.frequency.setValueAtTime(f, now);
-        g.gain.setValueAtTime(0.2, now);
-        g.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+        g.gain.setValueAtTime(0.18, now);
+        g.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
         osc.connect(g);
         g.connect(audioCtx.destination);
         osc.start(now);
-        osc.stop(now + 0.2);
-      }, idx * 100);
+        osc.stop(now + 0.16);
+      }, idx * 90);
     });
   },
 
@@ -613,14 +607,14 @@ const SFX = {
     const osc = audioCtx.createOscillator();
     const g = audioCtx.createGain();
     osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(85, now);
-    osc.frequency.exponentialRampToValueAtTime(40, now + 0.35);
-    g.gain.setValueAtTime(0.45, now);
-    g.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+    osc.frequency.setValueAtTime(80, now);
+    osc.frequency.exponentialRampToValueAtTime(40, now + 0.3);
+    g.gain.setValueAtTime(0.4, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
     osc.connect(g);
     g.connect(audioCtx.destination);
     osc.start(now);
-    osc.stop(now + 0.35);
+    osc.stop(now + 0.3);
   },
 
   // ゲームオーバー
@@ -630,19 +624,19 @@ const SFX = {
     const osc = audioCtx.createOscillator();
     const g = audioCtx.createGain();
     osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(200, now);
-    osc.frequency.exponentialRampToValueAtTime(60, now + 0.8);
-    g.gain.setValueAtTime(0.4, now);
-    g.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
+    osc.frequency.setValueAtTime(180, now);
+    osc.frequency.exponentialRampToValueAtTime(50, now + 0.7);
+    g.gain.setValueAtTime(0.35, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
     osc.connect(g);
     g.connect(audioCtx.destination);
     osc.start(now);
-    osc.stop(now + 0.8);
+    osc.stop(now + 0.7);
   }
 };
 
 // --- ゲームロジック ---
-const LANES = 7; // 0 〜 6
+const LANES = 7;
 const MAX_Y = 10;
 
 let playerLane = 3;
@@ -652,17 +646,24 @@ let currentWave = 1;
 let isGameOver = false;
 
 let enemies = [];
-let enemyStepIndex = 0;
 let lastStepTime = 0;
-let stepInterval = 1700; // ゆっくり
-
-let lastPulseTime = 0;
-const PULSE_INTERVAL = 680; // 約0.68秒おきに断続音
+let stepInterval = 1700;
 
 let playerBullets = [];
 let enemyBullets = [];
 
+// 全敵のオーディオノードを安全に停止・クリーンアップ
+function clearAllEnemyAudio() {
+  for (const e of enemies) {
+    if (e.soundNodes) {
+      e.soundNodes.cleanup();
+      e.soundNodes = null;
+    }
+  }
+}
+
 function startWave(waveNum) {
+  clearAllEnemyAudio();
   currentWave = waveNum;
   enemies = [];
   playerBullets = [];
@@ -672,10 +673,9 @@ function startWave(waveNum) {
   let spawnLanes = [];
 
   if (enemyCount === 1) {
-    // 最初の1体は自機(3)から離れた左1列に出現
-    spawnLanes = [1];
+    spawnLanes = [1]; // 最初の1体は自機(3)から離れた左1列に出現
   } else if (enemyCount === 2) {
-    spawnLanes = [1, 5];
+    spawnLanes = [1, 5]; // 左右に1体ずつ
   } else if (enemyCount === 3) {
     spawnLanes = [0, 3, 6];
   } else {
@@ -683,17 +683,30 @@ function startWave(waveNum) {
   }
 
   for (let i = 0; i < enemyCount; i++) {
-    enemies.push({
+    const enemyObj = {
       lane: spawnLanes[i],
       y: 1,
-      alive: true
-    });
+      alive: true,
+      soundNodes: null
+    };
+    // 常時発音ノードの生成
+    enemyObj.soundNodes = createEnemySoundNodes(enemyObj, i);
+    enemies.push(enemyObj);
   }
 
   stepInterval = Math.max(700, 1700 - (waveNum - 1) * 140);
   enemyDir = 1;
-  enemyStepIndex = 0;
   updateUI();
+  updateAllEnemiesAudio();
+}
+
+// 全敵の立体音響パラメータを一括更新
+function updateAllEnemiesAudio() {
+  for (const e of enemies) {
+    if (e.alive) {
+      updateEnemySpatialAudio(e);
+    }
+  }
 }
 
 let enemyDir = 1;
@@ -725,6 +738,9 @@ function stepEnemies() {
     }
   }
 
+  updateAllEnemiesAudio();
+
+  // 敵の弾発射
   if (currentWave >= 2 && Math.random() < 0.22) {
     const shooter = aliveEnemies[Math.floor(Math.random() * aliveEnemies.length)];
     enemyBullets.push({
@@ -740,6 +756,7 @@ function moveLeft() {
   if (playerLane > 0) {
     playerLane--;
     SFX.playerMove(-1);
+    updateAllEnemiesAudio();
   } else {
     SFX.wallBump(-1);
   }
@@ -752,6 +769,7 @@ function moveRight() {
   if (playerLane < LANES - 1) {
     playerLane++;
     SFX.playerMove(1);
+    updateAllEnemiesAudio();
   } else {
     SFX.wallBump(1);
   }
@@ -771,6 +789,7 @@ function fireShot() {
 }
 
 function restartGame() {
+  clearAllEnemyAudio();
   score = 0;
   hp = 3;
   playerLane = 3;
@@ -781,6 +800,7 @@ function restartGame() {
 
 function endGame() {
   isGameOver = true;
+  clearAllEnemyAudio();
   SFX.gameOver();
   document.getElementById('final-wave').textContent = currentWave;
   document.getElementById('final-score').textContent = score;
@@ -827,30 +847,19 @@ function gameLoop(time) {
     stepEnemies();
   }
 
-  // 敵の断続音
-  if (time - lastPulseTime > PULSE_INTERVAL) {
-    lastPulseTime = time;
-    const aliveEnemies = enemies.filter(e => e.alive);
-    if (aliveEnemies.length > 0) {
-      const soundEnemy = aliveEnemies[enemyStepIndex % aliveEnemies.length];
-      enemyStepIndex++;
-
-      const distRate = soundEnemy.y / MAX_Y;
-      const isLockedOn = (soundEnemy.lane === playerLane);
-
-      SFX.invaderPulse(soundEnemy.lane, distRate, isLockedOn);
-    }
-  }
-
-  // プレイヤー弾
+  // プレイヤー弾移動
   for (let i = playerBullets.length - 1; i >= 0; i--) {
     const b = playerBullets[i];
-    b.y -= 0.24;
+    b.y -= 0.26;
 
     let hit = false;
     for (const e of enemies) {
       if (e.alive && e.lane === b.lane && Math.abs(e.y - b.y) < 0.7) {
         e.alive = false;
+        if (e.soundNodes) {
+          e.soundNodes.cleanup();
+          e.soundNodes = null;
+        }
         hit = true;
         score += 100 * currentWave;
         SFX.enemyExplode(e.lane);
@@ -861,7 +870,7 @@ function gameLoop(time) {
           SFX.waveClear();
           setTimeout(() => {
             startWave(currentWave + 1);
-          }, 1000);
+          }, 900);
         }
         break;
       }
@@ -872,7 +881,7 @@ function gameLoop(time) {
     }
   }
 
-  // 敵弾
+  // 敵弾移動
   bulletWarningTimer += dt;
   for (let i = enemyBullets.length - 1; i >= 0; i--) {
     const eb = enemyBullets[i];
@@ -896,7 +905,7 @@ function gameLoop(time) {
     }
   }
 
-  if (enemyBullets.length > 0 && bulletWarningTimer > 320) {
+  if (enemyBullets.length > 0 && bulletWarningTimer > 300) {
     bulletWarningTimer = 0;
     const closestBullet = [...enemyBullets].sort((a, b) => b.y - a.y)[0];
     if (closestBullet) {
@@ -974,7 +983,7 @@ function drawRadar() {
   for (const b of playerBullets) {
     const x = b.lane * laneW + laneW / 2;
     const y = b.y * unitH;
-    ctx.fillRect(x - 3, y - 8, 6, 16);
+    ctx.fillRect(x - 2, y - 8, 4, 16);
   }
 
   ctx.fillStyle = '#ffcc00';
