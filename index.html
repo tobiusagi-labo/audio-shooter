@@ -310,10 +310,11 @@ function initAudio() {
 const ENEMY_FREQS = [220, 277, 330, 415, 494, 554, 660];
 
 /**
- * ★ 全9列（0〜8、中央4）の等音量（Constant Power）空間音響パラメータ ★
- * 前方の距離＝音量の大小で表現
- * 左右の距離＝音量ではなく音の出る場所（パン・ITD）で表現
- * 9ライン離れていても、1ライン隣の同じ前方距離の敵と同じ音響パワーを維持！
+ * ★ 全9列（0〜8、中央4）の超高分離ワイド空間音響パラメータ ★
+ * 左右のパン差を大幅に強化！
+ * 1列ズレただけでも反対耳を急激に減衰（約80%カット）させ、
+ * イヤホンで左右のズレ・位置が明確に判別できるように設定。
+ * かつ、受音側（手前耳）の音量は減衰させず、前方距離に応じた本来の音量をキープ！
  */
 function get9LaneSpatialParams(targetLane) {
   const diff = targetLane - playerLane; // -8 〜 +8
@@ -321,46 +322,52 @@ function get9LaneSpatialParams(targetLane) {
   const sign = Math.sign(diff); // -1: 左, 0: 正面, 1: 右
 
   if (diff === 0) {
-    // 正面：左右の耳に等しい音量（各約0.7071で合計音響エネルギー1.0）＆ 遅延ゼロ
-    const centerAmp = Math.SQRT1_2;
+    // 正面：左右の耳に等しく100%の音量 ＆ 遅延ゼロ（完全なセンター定位）
     return {
       pan: 0.0,
-      leftVol: centerAmp,
-      rightVol: centerAmp,
+      leftVol: 1.0,
+      rightVol: 1.0,
       leftDelay: 0,
       rightDelay: 0
     };
   }
 
-  // 9列（差分0〜8）に対応した等音量パンステップ
-  // 1列差: 0.28 (少し横、ズレをしっかり判別)
-  // 2列差: 0.50 (斜め横)
-  // 3列差: 0.70 (横方向)
-  // 4列差: 0.85 (深い横)
-  // 5列差: 0.93
-  // 6列差: 0.97
-  // 7列差: 0.99
-  // 8列差: 1.00 (完全な端)
-  const panSteps = [0.0, 0.28, 0.50, 0.70, 0.85, 0.93, 0.97, 0.99, 1.0];
+  // 左右の大幅なパン差（反対耳の音量比率）
+  // 1列差: 0.20 (約-14dB。1列離れただけでも劇的に片側に寄る！)
+  // 2列差: 0.08 (約-22dB。圧倒的に横方向)
+  // 3列差: 0.03 (約-30dB。ほぼ完全に片耳)
+  // 4列差: 0.01
+  // 5列差以上: 0.00 (完全な真横・片側のみ)
+  const farEarSteps = [1.0, 0.20, 0.08, 0.03, 0.01, 0.003, 0.001, 0.0002, 0.0];
+  const farRatio = farEarSteps[absDiff] !== undefined ? farEarSteps[absDiff] : 0.0;
+
+  // 耳間時間差（ITD）: 音の方向を脳が判別するための微小遅延 (0 〜 0.90ms)
+  const delaySteps = [0, 0.00022, 0.00040, 0.00058, 0.00072, 0.00080, 0.00085, 0.00088, 0.00090];
+  const delayTime = delaySteps[absDiff] || 0.00090;
+
+  // パン値 (-1.0 〜 +1.0)
+  const panSteps = [0.0, 0.65, 0.85, 0.94, 0.98, 0.995, 0.999, 1.0, 1.0];
   const panVal = sign * (panSteps[absDiff] || 1.0);
 
-  // 等音量パンニングの左右振幅係数 (Constant Power: cos(θ)^2 + sin(θ)^2 = 1.0)
-  // 左右どちらに何レーン離れても全体の音量は減衰しない
-  const angle = ((panVal + 1) / 4) * Math.PI;
-  const leftVol = Math.cos(angle);
-  const rightVol = Math.sin(angle);
-
-  // 耳間時間差（ITD）: 音の方向を脳が判別するための微小遅延 (0 〜 0.72ms)
-  // 遠い側の耳にのみ遅延を付与（音量は下げない）
-  const delayTime = Math.min(0.00072, absDiff * 0.00010);
-
-  return {
-    pan: panVal,
-    leftVol: leftVol,
-    rightVol: rightVol,
-    leftDelay: sign > 0 ? delayTime : 0,  // 右側にいる時は左耳に遅延
-    rightDelay: sign < 0 ? delayTime : 0  // 左側にいる時は右耳に遅延
-  };
+  if (sign < 0) {
+    // 左側にいる敵・弾：左耳が100%（遅延ゼロ）、右耳が大幅減衰＋遅延
+    return {
+      pan: panVal,
+      leftVol: 1.0,
+      rightVol: farRatio,
+      leftDelay: 0,
+      rightDelay: delayTime
+    };
+  } else {
+    // 右側にいる敵・弾：右耳が100%（遅延ゼロ）、左耳が大幅減衰＋遅延
+    return {
+      pan: panVal,
+      leftVol: farRatio,
+      rightVol: 1.0,
+      leftDelay: delayTime,
+      rightDelay: 0
+    };
+  }
 }
 
 /**
@@ -573,15 +580,25 @@ const SFX = {
     const merger = audioCtx.createChannelMerger(2);
     const leftGain = audioCtx.createGain();
     const rightGain = audioCtx.createGain();
+    const leftDelay = audioCtx.createDelay(0.01);
+    const rightDelay = audioCtx.createDelay(0.01);
+
     leftGain.gain.setValueAtTime(spatial.leftVol, now);
     rightGain.gain.setValueAtTime(spatial.rightVol, now);
+    leftDelay.delayTime.setValueAtTime(spatial.leftDelay, now);
+    rightDelay.delayTime.setValueAtTime(spatial.rightDelay, now);
 
     noise.connect(filter);
     filter.connect(g);
-    g.connect(leftGain);
+
+    g.connect(leftDelay);
+    leftDelay.connect(leftGain);
     leftGain.connect(merger, 0, 0);
-    g.connect(rightGain);
+
+    g.connect(rightDelay);
+    rightDelay.connect(rightGain);
     rightGain.connect(merger, 0, 1);
+
     merger.connect(audioCtx.destination);
 
     noise.start(now);
